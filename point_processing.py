@@ -16,6 +16,8 @@ import settings
 def crop_area(points):
     """Keep points inside the square around us and outside our own car."""
     x, y = points[:, 0], points[:, 1]
+    # Both masks are True/False per point; the result keeps the points
+    # that are in the square AND not on our own car.
     half = settings.AREA_HALF_SIZE
     inside_area = (np.abs(x) < half) & (np.abs(y) < half)
 
@@ -43,6 +45,8 @@ def voxel_downsample(points, voxel_size):
     cube_of_point = cube_of_point.ravel()
     n_cubes = cube_of_point.max() + 1
 
+    # Add up all points of each cube and divide by how many there were.
+    # This averages x, y, z and the intensity column at the same time.
     sums = np.zeros((n_cubes, points.shape[1]))
     np.add.at(sums, cube_of_point, points)
     counts = np.bincount(cube_of_point, minlength=n_cubes)
@@ -63,6 +67,8 @@ def ground_height_map(points):
     cell, n_cells = settings.GROUND_CELL_SIZE, grid_size()
     rows, columns = cell_index(points)
 
+    # np.minimum.at goes through all points and keeps the smallest z of
+    # each cell. Cells without any points stay at infinity.
     lowest = np.full((n_cells, n_cells), np.inf)
     valid = points[:, 2] > settings.LOWEST_VALID_Z
     np.minimum.at(lowest, (rows[valid], columns[valid]), points[valid, 2])
@@ -76,7 +82,10 @@ def ground_height_map(points):
     too_low = lowest < neighbour_median - settings.MAX_DIP_BELOW_NEIGHBOURS
     lowest[too_low] = neighbour_median[too_low]
 
+    # Every cell takes the lowest value of itself and its 8 neighbours.
     ground = minimum_filter(lowest, size=3, mode="nearest")
+    # Cells that still have no value (nothing seen there, e.g. behind a
+    # wall) get the typical ground height of this scan.
     known = np.isfinite(ground)
     ground[~known] = np.median(ground[known]) if known.any() else 0.0
     return ground
@@ -105,6 +114,7 @@ def split_ground(points):
     height above the local ground and is used again later (vehicle height).
     """
     ground_map = ground_height_map(points)
+    # Height of each point above the ground of the cell it falls in.
     rows, columns = cell_index(points)
     height = points[:, 2] - ground_map[rows, columns]
     return height < settings.GROUND_MARGIN, height, ground_map

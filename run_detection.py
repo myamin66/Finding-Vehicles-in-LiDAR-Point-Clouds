@@ -49,6 +49,7 @@ def main():
             print(f"{scene['name']}: {scene['description']}")
         return
 
+    # [::FRAME_STEP] keeps every 2nd scan (10 per second instead of 20).
     lidar_frames = dataset.frames(args.scene)[::settings.FRAME_STEP]
     camera_frames = dataset.frames(args.scene, "CAM_FRONT")
     first_time = lidar_frames[0]["timestamp"] / 1e6
@@ -75,6 +76,8 @@ def main():
 
         camera_frame = closest_in_time(camera_frames, frame["timestamp"])
         picture = render_frame(dataset, result, camera_frame, args.scene)
+        # The video writer is made at the first frame, because only then
+        # do we know the picture size.
         if writer is None:
             height, width = picture.shape[:2]
             writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"),
@@ -90,6 +93,7 @@ def main():
                                                     fps, (width, height))
             diagnostic_writer.write(grid)
 
+        # Count confident and uncertain tracks for the summary at the end.
         statuses.update(t.status for t in result["tracks"] if t.status != "held")
         n_frames += 1
 

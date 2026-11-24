@@ -26,6 +26,7 @@ def cluster_points(points_xy):
     if len(points_xy) == 0:
         return np.array([], dtype=int)
     dbscan = DBSCAN(eps=settings.CLUSTER_EPS, min_samples=settings.CLUSTER_MIN_SAMPLES)
+    # fit_predict gives every point a cluster number (0, 1, 2, ...) or -1.
     return dbscan.fit_predict(points_xy)
 
 
@@ -44,10 +45,13 @@ def fit_box(points_xy):
     cos, sin = np.cos(angles)[:, None], np.sin(angles)[:, None]
     x, y = points_xy[:, 0], points_xy[:, 1]
     # Turn the points by -angle so the candidate box becomes axis-aligned.
+    # u is the position along the turned x axis, v along the turned y axis.
     u = x * cos + y * sin
     v = -x * sin + y * cos
     size_u = u.max(axis=1) - u.min(axis=1)
     size_v = v.max(axis=1) - v.min(axis=1)
+    # At least 0.1 m per side, otherwise a cluster that is a straight line
+    # (width 0) would always win with an area of 0.
     area = np.maximum(size_u, 0.1) * np.maximum(size_v, 0.1)
 
     best = int(np.argmin(area))
@@ -59,6 +63,7 @@ def fit_box(points_xy):
     centre = np.array([centre_u * cos - centre_v * sin,
                        centre_u * sin + centre_v * cos])
 
+    # Length is always the long side, and yaw points along it.
     if size_u >= size_v:
         return centre, size_u, size_v, angle
     return centre, size_v, size_u, angle + np.pi / 2
@@ -82,8 +87,10 @@ def describe_clusters(points, height, labels):
             "length": float(length),
             "width": float(width),
             "yaw": float(yaw),
+            # lowest and highest point, measured above the local ground
             "bottom": float(height[members].min()),
             "top": float(height[members].max()),
+            # straight-line distance from our car to the box centre
             "distance": float(np.hypot(*centre)),
         })
     return clusters
@@ -94,6 +101,8 @@ def check_vehicle_rules(cluster):
     Hard rules from settings.py. Returns "" when the cluster could be a
     vehicle, otherwise a short reason why not.
     """
+    # The checks go from cheapest to most specific; the first one that
+    # fails is the reason shown in the diagnostic video.
     if cluster["n_points"] < settings.MIN_VEHICLE_POINTS:
         return "too few points"
     if cluster["top"] < settings.MIN_VEHICLE_TOP:

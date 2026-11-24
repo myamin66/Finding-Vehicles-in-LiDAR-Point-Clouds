@@ -48,7 +48,8 @@ class VehicleDetector:
         # Step 5: tracking.
         tracks = self.tracker.update(candidates, ego_to_global, time)
 
-        # Our own speed from the ego poses (only for the display).
+        # Our own speed from the ego poses (only for the display): distance
+        # driven since the previous scan divided by the time between them.
         if self.previous_pose is None:
             ego_speed = 0.0
         else:

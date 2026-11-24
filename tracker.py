@@ -34,8 +34,8 @@ from nuscenes_data import apply_transform
 class Track:
     def __init__(self, track_id, time, position, ego_position, cluster):
         self.id = track_id
-        self.hits = 0
-        self.misses = 0
+        self.hits = 0     # how many scans it was detected in
+        self.misses = 0   # scans in a row without a detection
         self.was_vehicle = False   # ever shown as a confident vehicle?
         # (time, vehicle position, our position), all in the world frame
         self.history = deque(maxlen=50)
@@ -72,6 +72,8 @@ class Track:
         if len(recent) < 4 or times[-1] - times[0] < 0.4:
             return None
         positions = np.array([h[1] for h in recent])
+        # polyfit(..., 1) fits a straight line: position = a * time + b.
+        # The slope a is the speed in that direction.
         vx = np.polyfit(times, positions[:, 0], 1)[0]
         vy = np.polyfit(times, positions[:, 1], 1)[0]
         return np.array([vx, vy])
@@ -86,10 +88,13 @@ class Track:
         times = np.array([h[0] for h in recent])
         if len(recent) < 4 or times[-1] - times[0] < 0.4:
             return None
+        # Distance between the vehicle and us at each moment, then the
+        # slope of that distance over time.
         distances = [np.linalg.norm(h[1] - h[2]) for h in recent]
         return float(np.polyfit(times, distances, 1)[0])
 
     def predict(self, time):
+        """Where the vehicle should be at `time` if it keeps its velocity."""
         velocity = self.velocity()
         if velocity is None:
             return self.position
@@ -107,6 +112,8 @@ class VehicleTracker:
         ego_to_global: 4x4 pose of our car for this scan
         time: scan time in seconds
         """
+        # Our own position in the world, and every box centre moved from
+        # the ego frame into the world frame (height is not needed).
         ego_position = ego_to_global[:2, 3]
         positions = []
         for cluster in candidates:
@@ -114,6 +121,10 @@ class VehicleTracker:
             positions.append(apply_transform(ego_to_global, centre)[0, :2])
 
         # 1 + 2: predict and match, closest pairs first.
+        # Every track/detection pair that is close enough is a possible
+        # match. After sorting by distance we take pairs from the top and
+        # skip any track or detection that is already used, so each one is
+        # matched at most once and the closest pairs win.
         pairs = []
         for t_index, track in enumerate(self.tracks):
             predicted = track.predict(time)
@@ -133,6 +144,8 @@ class VehicleTracker:
             used_candidates.add(c_index)
 
         # 3: misses, deletion and new tracks.
+        # A track that got no detection is kept for a few scans (the car
+        # may be hidden behind another one for a moment), then dropped.
         for t_index, track in enumerate(self.tracks):
             if t_index not in used_tracks:
                 track.misses += 1
@@ -155,6 +168,7 @@ def describe_track(track, ego_to_global, time):
     confidence score, status and the reasons for doubt.
     """
     # Where is it now, seen from our car? (for held tracks: the prediction)
+    # The inverse of our pose turns world positions back into the ego frame.
     global_to_ego = np.linalg.inv(ego_to_global)
     position = track.predict(time) if track.misses > 0 else track.position
     track.ego_position = apply_transform(global_to_ego, np.array([[*position, 0.0]]))[0, :2]

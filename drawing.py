@@ -46,6 +46,8 @@ def track_colour(track_id):
 def to_pixels(xy):
     """Ego-frame (x forward, y left) -> image pixels (column, row)."""
     xy = np.atleast_2d(xy)
+    # Forward (x) is up in the picture, so it lowers the row number.
+    # Left (y) is left in the picture, so it lowers the column number.
     column = CENTRE - xy[:, 1] * SCALE
     row = CENTRE - xy[:, 0] * SCALE
     return np.column_stack([column, row]).astype(np.int32)
@@ -81,6 +83,8 @@ def draw_points(image, xy, colour, radius=1):
                 & (pixels[:, 1] >= 0) & (pixels[:, 1] < BEV_SIZE))
     pixels = pixels[on_image]
     if radius <= 1:
+        # Writing straight into the pixel array is much faster than
+        # calling cv2.circle for tens of thousands of points.
         colours = colour if np.ndim(colour) == 1 else np.asarray(colour)[on_image]
         image[pixels[:, 1], pixels[:, 0]] = colours
     else:
@@ -97,6 +101,8 @@ def box_corners(centre, length, width, yaw):
 
 
 def dashed_line(image, start, end, colour, thickness, dash=6):
+    # OpenCV has no dashed lines: cut the line into pieces of about `dash`
+    # pixels and draw every second piece.
     start, end = np.array(start, float), np.array(end, float)
     length = np.linalg.norm(end - start)
     n_pieces = max(1, int(length / dash))
@@ -147,6 +153,8 @@ def cluster_view(result):
     objects, labels = result["objects"], result["labels"]
     draw_points(image, objects[labels < 0, :2], (70, 70, 70))
     for cluster in result["clusters"]:
+        # Cluster numbers change from scan to scan, so the colour only
+        # has to make neighbouring clusters look different.
         colour = track_colour(int(cluster["members"][0]))
         xy = objects[cluster["members"], :2]
         if cluster["reject_reason"]:
@@ -251,6 +259,8 @@ def camera_view(dataset, result, camera_frame, width):
         in_front = in_camera[:, 2] > 1.0           # z = viewing direction
         if not in_front.any():
             continue
+        # Pinhole camera: multiply by the intrinsic matrix, then divide by
+        # the depth (things further away end up closer to the image centre).
         pixels = in_camera[in_front] @ intrinsic.T
         pixels = (pixels[:, :2] / pixels[:, 2:3]).astype(int)
         for u, v in pixels:

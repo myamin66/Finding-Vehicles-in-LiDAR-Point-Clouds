@@ -58,6 +58,8 @@ def main():
     camera_frames = dataset.frames(args.scene, "CAM_FRONT")
     first_time = lidar_frames[0]["timestamp"] / 1e6
 
+    # Run the pipeline scan by scan until the chosen moment; `result` then
+    # holds every in-between step of that one scan.
     detector = VehicleDetector(dataset)
     for frame in lidar_frames:
         result = detector.process(frame)

@@ -32,6 +32,8 @@ import numpy as np
 def quaternion_to_matrix(q):
     """3x3 rotation matrix from a quaternion [w, x, y, z]."""
     w, x, y, z = q
+    # Standard formula for a unit quaternion. Written out by hand so the
+    # project doesn't need an extra library just for this one function.
     return np.array([
         [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
@@ -49,6 +51,8 @@ def make_transform(translation, rotation):
 
 def apply_transform(matrix, points_xyz):
     """Applies a 4x4 transform to an (N, 3) array of points."""
+    # Each point is a row, so the rotation is multiplied from the right
+    # (transposed) and then the translation is added to every row.
     return points_xyz @ matrix[:3, :3].T + matrix[:3, 3]
 
 
@@ -65,6 +69,8 @@ class NuScenesMini:
             with open(os.path.join(table_folder, name + ".json")) as file:
                 return json.load(file)
 
+        # Tables that are looked up by token become dictionaries
+        # (token -> record), so a lookup is instant instead of a search.
         self.scenes = load("scene")
         self.samples = {r["token"]: r for r in load("sample")}
         self.sample_data = load("sample_data")
@@ -109,6 +115,9 @@ class NuScenesMini:
         path = os.path.join(self.data_root, frame["filename"])
         raw = np.fromfile(path, dtype=np.float32).reshape(-1, 5)
 
+        # The points are measured from the LiDAR on the roof. The calibration
+        # says where the LiDAR sits on the car, so this moves every point
+        # into the ego frame (origin on the ground under the rear axle).
         calibration = self.calibrations[frame["calibrated_sensor_token"]]
         sensor_to_ego = make_transform(calibration["translation"], calibration["rotation"])
 
